@@ -12,10 +12,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/xtls/xray-core/v1/common/cmdarg"
-	"github.com/xtls/xray-core/v1/common/platform"
-	"github.com/xtls/xray-core/v1/core"
-	"github.com/xtls/xray-core/v1/main/commands/base"
+	"github.com/xtls/xray-core/common/cmdarg"
+	"github.com/xtls/xray-core/common/platform"
+	"github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/main/commands/base"
 )
 
 var cmdRun = &base.Command{
@@ -64,7 +64,7 @@ func executeRun(cmd *base.Command, args []string) {
 	printVersion()
 	server, err := startXray()
 	if err != nil {
-		base.Fatalf("Filed to start: %s", err)
+		base.Fatalf("Failed to start: %s", err)
 	}
 
 	if *test {
@@ -74,7 +74,7 @@ func executeRun(cmd *base.Command, args []string) {
 	}
 
 	if err := server.Start(); err != nil {
-		base.Fatalf("Filed to start: %s", err)
+		base.Fatalf("Failed to start: %s", err)
 	}
 	defer server.Close()
 

@@ -1,5 +1,3 @@
-// +build !confonly
-
 package trojan
 
 import (
@@ -7,21 +5,21 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xtls/xray-core/v1/common"
-	"github.com/xtls/xray-core/v1/common/buf"
-	"github.com/xtls/xray-core/v1/common/net"
-	"github.com/xtls/xray-core/v1/common/platform"
-	"github.com/xtls/xray-core/v1/common/protocol"
-	"github.com/xtls/xray-core/v1/common/retry"
-	"github.com/xtls/xray-core/v1/common/session"
-	"github.com/xtls/xray-core/v1/common/signal"
-	"github.com/xtls/xray-core/v1/common/task"
-	core "github.com/xtls/xray-core/v1/core"
-	"github.com/xtls/xray-core/v1/features/policy"
-	"github.com/xtls/xray-core/v1/features/stats"
-	"github.com/xtls/xray-core/v1/transport"
-	"github.com/xtls/xray-core/v1/transport/internet"
-	"github.com/xtls/xray-core/v1/transport/internet/xtls"
+	"github.com/xtls/xray-core/common"
+	"github.com/xtls/xray-core/common/buf"
+	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/platform"
+	"github.com/xtls/xray-core/common/protocol"
+	"github.com/xtls/xray-core/common/retry"
+	"github.com/xtls/xray-core/common/session"
+	"github.com/xtls/xray-core/common/signal"
+	"github.com/xtls/xray-core/common/task"
+	core "github.com/xtls/xray-core/core"
+	"github.com/xtls/xray-core/features/policy"
+	"github.com/xtls/xray-core/features/stats"
+	"github.com/xtls/xray-core/transport"
+	"github.com/xtls/xray-core/transport/internet"
+	"github.com/xtls/xray-core/transport/internet/xtls"
 )
 
 // Client is a inbound handler for trojan protocol
@@ -94,15 +92,16 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 	}
 
 	var rawConn syscall.RawConn
+	var sctx context.Context
 
 	connWriter := &ConnWriter{}
 	allowUDP443 := false
 	switch account.Flow {
-	case XRO + "-udp443", XRD + "-udp443":
+	case XRO + "-udp443", XRD + "-udp443", XRS + "-udp443":
 		allowUDP443 = true
 		account.Flow = account.Flow[:16]
 		fallthrough
-	case XRO, XRD:
+	case XRO, XRD, XRS:
 		if destination.Address.Family().IsDomain() && destination.Address.Domain() == muxCoolAddress {
 			return newError(account.Flow + " doesn't support Mux").AtWarning()
 		}
@@ -114,13 +113,18 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 			if xtlsConn, ok := iConn.(*xtls.Conn); ok {
 				xtlsConn.RPRX = true
 				xtlsConn.SHOW = trojanXTLSShow
-				connWriter.Flow = account.Flow
+				xtlsConn.MARK = "XTLS"
+				if account.Flow == XRS {
+					sctx = ctx
+					account.Flow = XRD
+				}
 				if account.Flow == XRD {
 					xtlsConn.DirectMode = true
+					if sc, ok := xtlsConn.Connection.(syscall.Conn); ok {
+						rawConn, _ = sc.SyscallConn()
+					}
 				}
-				if sc, ok := xtlsConn.Connection.(syscall.Conn); ok {
-					rawConn, _ = sc.SyscallConn()
-				}
+				connWriter.Flow = account.Flow
 			} else {
 				return newError(`failed to use ` + account.Flow + `, maybe "security" is not "xtls"`).AtWarning()
 			}
@@ -185,7 +189,7 @@ func (c *Client) Process(ctx context.Context, link *transport.Link, dialer inter
 			if statConn != nil {
 				counter = statConn.ReadCounter
 			}
-			return ReadV(reader, link.Writer, timer, iConn.(*xtls.Conn), rawConn, counter)
+			return ReadV(reader, link.Writer, timer, iConn.(*xtls.Conn), rawConn, counter, sctx)
 		}
 		return buf.Copy(reader, link.Writer, buf.UpdateActivity(timer))
 	}
