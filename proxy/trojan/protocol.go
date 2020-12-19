@@ -28,7 +28,7 @@ var (
 		protocol.AddressFamilyByte(0x03, net.AddressFamilyDomain),
 	)
 
-	trojanXTLSShow = false
+	xtls_show = false
 )
 
 const (
@@ -90,10 +90,10 @@ func (c *ConnWriter) writeHeader() error {
 	command := commandTCP
 	if c.Target.Network == net.Network_UDP {
 		command = commandUDP
-	} else if c.Flow == XRO {
-		command = commandXRO
 	} else if c.Flow == XRD {
 		command = commandXRD
+	} else if c.Flow == XRO {
+		command = commandXRO
 	}
 
 	if _, err := buffer.Write(c.Account.Key); err != nil {
@@ -211,10 +211,10 @@ func (c *ConnReader) ParseHeader() error {
 	network := net.Network_TCP
 	if command[0] == commandUDP {
 		network = net.Network_UDP
-	} else if command[0] == commandXRO {
-		c.Flow = XRO
 	} else if command[0] == commandXRD {
 		c.Flow = XRD
+	} else if command[0] == commandXRO {
+		c.Flow = XRO
 	}
 
 	addr, port, err := addrParser.ReadAddressPort(nil, c.Reader)
@@ -325,6 +325,9 @@ func ReadV(reader buf.Reader, writer buf.Writer, timer signal.ActivityUpdater, c
 						statConn, ok := iConn.(*internet.StatCouterConnection)
 						if ok {
 							iConn = statConn.Connection
+						}
+						if xc, ok := iConn.(*xtls.Conn); ok {
+							iConn = xc.Connection
 						}
 						if tc, ok := iConn.(*net.TCPConn); ok {
 							if conn.SHOW {
