@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/xtls/xray-core/common/net"
+	"github.com/xtls/xray-core/common/ocsp"
 	"github.com/xtls/xray-core/common/protocol/tls/cert"
 	"github.com/xtls/xray-core/transport/internet"
 )
@@ -53,6 +54,19 @@ func (c *Config) BuildCertificates() []tls.Certificate {
 			continue
 		}
 		certs = append(certs, keyPair)
+		if entry.OcspStapling != 0 {
+			go func(cert *tls.Certificate) {
+				t := time.NewTicker(time.Duration(entry.OcspStapling) * time.Second)
+				for {
+					if newData, err := ocsp.GetOCSPForCert(cert.Certificate); err != nil {
+						newError("ignoring invalid OCSP").Base(err).AtWarning().WriteToLog()
+					} else if string(newData) != string(cert.OCSPStaple) {
+						cert.OCSPStaple = newData
+					}
+					<-t.C
+				}
+			}(&certs[len(certs)-1])
+		}
 	}
 	return certs
 }
@@ -180,7 +194,7 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 			RootCAs:                root,
 			InsecureSkipVerify:     false,
 			NextProtos:             nil,
-			SessionTicketsDisabled: false,
+			SessionTicketsDisabled: true,
 		}
 	}
 
@@ -189,7 +203,7 @@ func (c *Config) GetTLSConfig(opts ...Option) *tls.Config {
 		RootCAs:                root,
 		InsecureSkipVerify:     c.AllowInsecure,
 		NextProtos:             c.NextProtocol,
-		SessionTicketsDisabled: c.DisableSessionResumption,
+		SessionTicketsDisabled: !c.EnableSessionResumption,
 	}
 
 	for _, opt := range opts {
